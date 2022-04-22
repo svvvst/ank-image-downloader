@@ -1,7 +1,7 @@
 # ank-image-downloader
 An image downloader for the Anki notecard app.
 
-This project is based on kelciour's Batch Download Pictures From Google Images available on AnkiWeb [here](https://ankiweb.net/shared/info/561924305). If you would like to support his work, by him a coffee on Ko-Fi here: https://ko-fi.com/kelciour
+This project is based on **kelciour**'s *Batch Download Pictures From Google Images* available on AnkiWeb [here](https://ankiweb.net/shared/info/561924305). If you would like to support his work, please by him a coffee on Ko-Fi here: https://ko-fi.com/kelciour
 
 Instructions below are originally from Kelciour's AnkiWeb page for the add-on. They may be updated along with future commits to the add-on on this fork.
 
