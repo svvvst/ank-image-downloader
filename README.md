@@ -3,9 +3,13 @@ An image downloader for the Anki notecard app.
 
 This project is based on **kelciour**'s *Batch Download Pictures From Google Images* available on AnkiWeb [here](https://ankiweb.net/shared/info/561924305). If you would like to support his work, please by him a coffee on Ko-Fi here: https://ko-fi.com/kelciour
 
-Instructions below are originally from Kelciour's AnkiWeb page for the add-on. They may be updated along with future commits to the add-on on this fork.
+## Changelog
+2022-04-22 - Fixed several bugs causing the status bar to break during download. 
 
 ## Description
+*The following information adapted from Kelciour's AnkiWeb page for this add-on.*
+It may be updated along with future commits to the add-on on this fork.
+
 An Anki add-on to batch download pictures from Google Images.
 
 ### Compatibility
