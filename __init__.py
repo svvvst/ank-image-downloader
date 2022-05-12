@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 
 from aqt.qt import *
 from aqt.utils import showInfo, tooltip
-from anki.hooks import addHook
+from anki.hooks import addHook, runHook
 from anki.lang import ngettext
 from anki.utils import checksum, tmpfile, noBundledLibs
 
@@ -31,6 +31,7 @@ from .designer.main import Ui_Dialog
 # New Libraries
 from aqt.progress import ProgressManager
 from aqt.taskman import TaskManager
+from aqt import gui_hooks
 
 
 # https://github.com/glutanimate/html-cleaner/blob/master/html_cleaner/main.py#L59
@@ -47,6 +48,7 @@ headers = {
   "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.67 Safari/537.36"
 }
 
+# Update Note Fields
 def updateField(mw, config, nid, fld, images, overwrite):
     if not images:
         return
@@ -65,6 +67,7 @@ def updateField(mw, config, nid, fld, images, overwrite):
         note[fld] = delimiter.join(imgs)
     note.flush()
 
+# Scrape Images from URL
 def getImages(nid, fld, html, img_width, img_height, img_count, fld_overwrite):
     from PIL import Image, ImageSequence, UnidentifiedImageError
 
@@ -152,34 +155,30 @@ def getImages(nid, fld, html, img_width, img_height, img_count, fld_overwrite):
                 raise
     return (nid, fld, images, fld_overwrite)
 
+# Run query, add images to notes
 def updateNotes(browser, mw, nids, sf, sq, config):
-
-    # progress = ProgressManager(mw=mw)
-    # mw.taskman.run_on_main(lambda: progress.start(immediate=True,label='Processing notes...',max=1,min=0))
-
-    # mw.taskman.run_on_main(lambda mw=mw: progress = ProgressManager(mw=mw))
-
-    # showInfo('test')
     browser.model.beginReset()
     with concurrent.futures.ThreadPoolExecutor() as executor:
         jobs = []
         processed = set()
+
+        # For each Note ID in list of Note IDs ...
         for c, nid in enumerate(nids, 1): 
-
-
             note = mw.col.getNote(nid)
 
-            w = note[sf]
+            w = note[sf] #source field content
 
+            # for each query from form ...
             for q in sq:
                 df = q["Field"]
 
-                if not df:
+                if not df:      # if destination field empty, go to next note ID
                     continue
 
-                if note[df] and q["Overwrite"] == "Skip":
+                if note[df] and q["Overwrite"] == "Skip":   # if skip selected, go to next note ID
                     continue
-
+                
+                # Strip HTML from source field
                 w = re.sub(r'</?(b|i|u|strong|span)(?: [^>]+)>', '', w)
                 w = re.sub(r'\[sound:.*?\]', '', w)
                 if '<' in w:
@@ -187,16 +186,18 @@ def updateNotes(browser, mw, nids, sf, sq, config):
                     for s in soup.stripped_strings:
                         w = s
                         break
-                    else:
-                        w = re.sub(r'<br ?/?>[\s\S]+$', ' ', w)
-                        w = re.sub(r'<[^>]+>', '', w)
+                else:
+                    w = re.sub(r'<br ?/?>[\s\S]+$', ' ', w)
+                    w = re.sub(r'<[^>]+>', '', w)
 
+                # Remove and Reformat Clozes
                 clozes = re.findall(r'{{c\d+::(.*?)(?::.*?)?}}', w)
                 if clozes:
                     w = ' '.join(clozes)
 
-                query = q["URL"].replace("{}", w)
+                query = q["URL"].replace("{}", w) # insert source text into URL
 
+                # Add requests and scrape to queue list
                 try:
                     r = requests.get("https://www.google.com/search?tbm=isch&q={}&safe=active".format(query), headers=headers, timeout=15)
                     r.raise_for_status()
@@ -212,30 +213,21 @@ def updateNotes(browser, mw, nids, sf, sq, config):
                 processed.add(nid)
                 jobs.remove(future)
             else:
-                # progress.finish()
-                # progress.start(immediate=True,label='Processing notes...',max=len(nids),min=len(processed))
-                # mw.taskman.run_on_main(lambda: progress.update(label='Processing notes...',max=len(nids),value=len(processed)))
                 label = 'Processing ' + str(len(processed)) + ' of ' + str(len(nids))
                 mw.taskman.run_on_main(lambda:mw.progress.update(label=label,value=len(processed),max=len(nids)))
-                # label = str(len(processed)) + ' of ' + str(len(nids))
-                # tooltip(label)
 
+        # Execute queued jobs
         for future in concurrent.futures.as_completed(jobs):
             nid, fld, images, overwrite = future.result()
             updateField(mw, config, nid, fld, images, overwrite)
             processed.add(nid)
-            # progress.finish()
-            # progress.start(immediate=True,label='Processing notes...',max=len(nids),min=len(processed))
-            # mw.taskman.run_on_main(lambda: progress.update(label='Processing notes...',max=len(nids),value=len(processed)))
             label = 'Processing ' + str(len(processed)) + ' of ' + str(len(nids))
             mw.taskman.run_on_main(lambda:mw.progress.update(label=label,value=len(processed),max=len(nids)))
-            # label = str(len(processed)) + ' of ' + str(len(nids))
-            # tooltip(label)
 
     browser.model.endReset()
     mw.requireReset()
-    # mw.progress.finish()
 
+# Query Form UI
 def updateNotesUI(browser, nids):
     from PIL import Image, ImageSequence, UnidentifiedImageError
 
@@ -263,6 +255,7 @@ def updateNotesUI(browser, nids):
     note = mw.col.getNote(nids[0])
     fields = note.keys()
 
+    # Form Setup
     frm.srcField.addItems(fields)
     fld = config["Source Field"]
     if fld in fields:
@@ -345,11 +338,16 @@ def updateNotesUI(browser, nids):
         return
 
     sf = frm.srcField.currentText()
+    # End Form setup
 
+    # Query Setup
+    # Add Each form line to sq (Search Queries) array
     sq = []
     columns = ["Name", "URL", "Field", "Count", 'Overwrite', 'Width', 'Height']
-    for i in range(1, frm.gridLayout.rowCount()):
-        q = {}
+
+    # For each cell in form...
+    for i in range(1, frm.gridLayout.rowCount()): 
+        q = {}  # query field contents
         for j in range(frm.gridLayout.columnCount()):
             key = columns[j]
             if not key:
@@ -373,19 +371,20 @@ def updateNotesUI(browser, nids):
                 q[key] = item.text()
         sq.append(q)
 
+    # Write current values to config
     config["Source Field"] = sf
-    config["Search Queries"] = sq
+    config["Search Queries"] = sq #add search queries to config
     mw.addonManager.writeConfig(__name__, config)
-
-    mw.checkpoint("Add Google Images")
-
+    
+    # Query execution
+    mw.checkpoint("Add Google Images") # Wait for button press
+    
     mw.taskman.with_progress(
         label='Processing...!',
         immediate=True, 
         task=lambda: updateNotes(browser, mw, nids, sf, sq, config),
         on_done=lambda dummy: showInfo('Complete!',parent=browser)
     )
-
 
 def onAddImages(browser):
     nids = browser.selectedNotes()
@@ -404,3 +403,4 @@ def setupMenu(browser):
 
 
 addHook("browser.setupMenus", setupMenu)
+#gui_hooks.browser_will_show_context_menu(onAddImages)
